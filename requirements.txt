@@ -1,0 +1,15 @@
+# Comment-Vision-Claw Dependencies
+
+# Core
+python-dotenv>=1.0.0
+playwright>=1.40.0
+playwright-stealth>=1.0.6
+
+# MCP Support
+mcp>=0.9.0
+
+# AI Analysis (Optional)
+openai>=1.0.0
+
+# Utilities
+requests>=2.31.0

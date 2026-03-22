@@ -1,0 +1,60 @@
+# Environment variables
+.env
+
+# User data (browser sessions)
+data/user_data/
+
+# Temporary data (regenerated each run)
+data/results.json
+data/screenshots/*.png
+data/report_*.pdf
+data/_temp_*.html
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Lint/Cache
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Playwright
+playwright/
