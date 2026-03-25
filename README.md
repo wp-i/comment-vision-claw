@@ -1,60 +1,79 @@
 <div align="center">
 
-# 🔥 Comment-Vision-Claw
+# Comment-Vision-Claw
 
-**抖音热评智能抓取与分析工具**
+**抖音热评智能抓取 · 截图 · 分析 · 报告 一站式解决方案**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Playwright](https://img.shields.io/badge/Playwright-latest-brightgreen.svg)](https://playwright.dev/)
 [![MediaCrawler](https://img.shields.io/badge/MediaCrawler-compatible-orange.svg)](https://github.com/NanmiCoder/MediaCrawler)
 
-**自动捕获高赞/高回复评论 · 智能截图 · 深度分析 · 生成专业 PDF 报告**
-
-[功能特点](#-功能特点) •
-[快速开始](#-快速开始) •
-[使用方式](#-使用方式) •
-[配置说明](#-配置说明) •
-[常见问题](#-常见问题)
+[快速开始](#快速开始) •
+[使用方式](#使用方式) •
+[配置说明](#配置说明) •
+[常见问题](#常见问题)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## 核心功能
 
-**Comment-Vision-Claw** 是一款专注于抖音评论分析的智能工具，帮助内容创作者、营销人员和研究者快速发现爆款评论背后的规律。
+<table>
+<tr>
+<td width="50%">
 
-### 为什么选择我们？
+### 抖音数据抓取
+- 基于 MediaCrawler 引擎，稳定抓取抖音评论
+- 关键词搜索 → 视频列表 → 评论数据，全链路自动化
+- 渐进式抓取策略，智能累计热评达标后停止
 
-| 痛点 | 解决方案 |
-|------|----------|
-| 手动翻阅评论效率低 | 自动抓取并筛选高互动评论 |
-| 难以发现爆款规律 | AI 智能分析评论走红原因 |
-| 数据整理耗时 | 一键生成专业 PDF 报告 |
-| 无法量化评论价值 | 多维度数据统计与可视化 |
+</td>
+<td width="50%">
 
-### 适用场景
+### 热评精准截图
+- 自定义筛选标准：点赞数 / 回复数阈值
+- 内容前缀匹配 + 点赞数匹配，双重定位确保准确
+- 每条热评独立截图，保留完整上下文
 
-- **内容创作者**：发现用户真实需求，优化内容方向
-- **营销人员**：分析爆款评论特征，制定传播策略
-- **研究人员**：采集社交媒体数据，进行舆情分析
-- **品牌运营**：监控品牌相关评论，及时响应用户反馈
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 图文 PDF 报告
+- 数据概览：点赞 Top 10 + 回复 Top 10
+- 热评卡片：截图 + 分析 + 数据，一页一评
+- AI 成因分析：解读评论走红原因（可选）
+
+</td>
+<td width="50%">
+
+### 多种启动方式
+- **Web UI**：`start.bat` 一键启动，零门槛
+- **命令行**：`python main.py "关键词"`，脚本集成
+- **MCP 协议**：接入 Claude / Cursor，AI 工具链扩展
+
+</td>
+</tr>
+</table>
 
 ---
 
-## ✨ 功能特点
+## 为什么选择我们
 
-- 🔍 **智能抓取** - 基于关键词搜索抖音视频，自动筛选高赞（≥1000）或高回复（≥100）的热评
-- 📸 **精准截图** - 自动定位评论区域，支持内容匹配和点赞数匹配，确保截取正确评论
-- 📊 **数据统计** - 展示评论点赞数 Top 10、回复数 Top 10，去重展示
-- 📄 **PDF 报告** - 生成专业分析报告，包含数据概览、热评截图、成因分析
-- 🤖 **AI 增强** - 支持 OpenAI/DeepSeek 等 API，生成更精准的分析（可选）
-- 🔌 **MCP 集成** - 支持 Model Context Protocol，可作为 AI 工具集成到 Claude/Cursor
+| 传统方式 | Comment-Vision-Claw |
+|----------|---------------------|
+| 手动翻阅评论，逐条筛选 | 自动抓取 + 智能筛选，一键完成 |
+| 截图靠手动，容易遗漏 | 精准定位热评，自动截图保存 |
+| 数据整理到 Excel，费时费力 | 直接生成专业 PDF 报告 |
+| 分析全靠人脑，主观判断 | AI 解读走红原因，客观数据支撑 |
+| 只能手动操作 | 支持脚本调用 + MCP 协议，可集成到工作流 |
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 前置条件
 
@@ -86,9 +105,15 @@ playwright install chromium
 cp .env.example .env   # 按需修改配置
 ```
 
+### 一条命令运行
+
+```bash
+python main.py "中医养生"     # 抓取、截图、分析、生成报告，一步到位
+```
+
 ---
 
-## 📖 使用方式
+## 使用方式
 
 ### 方式一：Web 界面（推荐）
 
@@ -99,12 +124,6 @@ streamlit run app.py
 ```
 
 浏览器自动打开 `http://localhost:8501`，输入关键词点击"开始抓取"即可。
-
-**功能亮点**：
-- 可视化配置抓取参数
-- 实时显示抓取进度
-- 在线预览截图效果
-- 一键下载 PDF 报告
 
 ### 方式二：命令行
 
@@ -144,7 +163,7 @@ python server.py --server
 
 ---
 
-## ⚙️ 配置说明
+## 配置说明
 
 复制 `.env.example` 为 `.env` 并修改：
 
@@ -173,8 +192,6 @@ OPENAI_MODEL=gpt-4o-mini
 - **点赞数 ≥ MIN_LIKE_COUNT**（默认 1000）
 - **回复数 ≥ MIN_REPLY_COUNT**（默认 100）
 
-可通过 Web 界面或命令行参数调整阈值。
-
 ### AI 分析配置
 
 支持 OpenAI 兼容 API（DeepSeek、智谱等）：
@@ -193,7 +210,32 @@ OPENAI_MODEL=glm-4-flash
 
 ---
 
-## 📁 项目结构
+## 输出说明
+
+### PDF 报告包含
+
+| 模块 | 内容 |
+|------|------|
+| 数据概览 | 点赞 Top 10、回复 Top 10 统计 |
+| 热评卡片 | 每条热评的截图 + 评论内容 + 点赞/回复数 |
+| 成因分析 | AI 解读评论走红原因（配置 API 后生效） |
+| 爆款提炼 | 提取可复用的创作方向和传播策略 |
+
+### 输出文件
+
+```
+data/
+├── results.json              # 热评原始数据（JSON）
+├── screenshots/
+│   ├── comment_001.png       # 热评截图
+│   ├── comment_002.png
+│   └── ...
+└── report_20260325_xxx.pdf   # 图文分析报告
+```
+
+---
+
+## 项目结构
 
 ```
 comment-vision-claw/
@@ -222,7 +264,7 @@ comment-vision-claw/
 
 ---
 
-## ❓ 常见问题
+## 常见问题
 
 <details>
 <summary><b>Q: 启动时报错 "MediaCrawler not found"</b></summary>
@@ -280,7 +322,7 @@ python main.py "关键词" --min-likes 500 --min-replies 50
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
 - **Python 3.9+** — 主要开发语言
 - **Playwright** — 浏览器自动化与截图
@@ -290,13 +332,13 @@ python main.py "关键词" --min-likes 500 --min-replies 50
 
 ---
 
-## 📄 许可证
+## 许可证
 
 [MIT License](LICENSE)
 
 ---
 
-## 🔗 致谢
+## 致谢
 
 - [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) — 社交媒体数据抓取框架
 - [Playwright](https://playwright.dev/) — 浏览器自动化工具
@@ -305,6 +347,6 @@ python main.py "关键词" --min-likes 500 --min-replies 50
 
 <div align="center">
 
-**如果这个项目对你有帮助，请给个 ⭐ Star 支持一下！**
+**如果这个项目对你有帮助，请给个 Star 支持一下！**
 
 </div>
