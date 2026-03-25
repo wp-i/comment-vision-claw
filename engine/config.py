@@ -22,7 +22,7 @@ HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
 MIN_LIKE_COUNT = int(os.getenv("MIN_LIKE_COUNT", "1000"))
 MIN_REPLY_COUNT = int(os.getenv("MIN_REPLY_COUNT", "100"))
 MAX_VIDEOS = int(os.getenv("MAX_VIDEOS", "200"))
-MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", "10"))
+MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", "20"))
 MAX_SCREENSHOTS = int(os.getenv("MAX_SCREENSHOTS", "10"))
 
 
@@ -71,9 +71,9 @@ def max_comments() -> int:
         from dotenv import load_dotenv
 
         load_dotenv(override=False)
-        return int(os.getenv("MAX_COMMENTS", "10"))
+        return int(os.getenv("MAX_COMMENTS", "20"))
     except Exception:
-        return 10
+        return 20
 
 
 # External tools

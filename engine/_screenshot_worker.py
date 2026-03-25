@@ -2,6 +2,7 @@
 Screenshot worker script - runs in subprocess to avoid event loop conflicts.
 
 通过 CDP 连接主抓取阶段的浏览器（端口 9222），浏览器由外层统一清理。
+复用单个标签页进行截图，避免打开多个浏览器窗口。
 """
 
 import json
@@ -29,21 +30,16 @@ def _check_login_status(page) -> bool:
         True 如果已登录（无弹窗），False 如果检测到登录弹窗。
     """
     try:
-        # 等待页面加载
         time.sleep(3)
 
-        # 检测常见的登录弹窗选择器
         login_selectors = [
-            # 抖音登录弹窗
             "div.login-guide-container",
             "div[class*='login-guide']",
             "div[class*='loginGuide']",
             "div[class*='login-modal']",
             "div[class*='loginModal']",
-            # 扫码登录
             "div[class*='qrcode-login']",
             "div[class*='qrcodeLogin']",
-            # 通用登录提示
             "div:has-text('扫码登录')",
             "div:has-text('请先登录')",
         ]
@@ -57,7 +53,6 @@ def _check_login_status(page) -> bool:
             except Exception:
                 continue
 
-        # 额外检查：页面内容是否包含登录相关文字
         try:
             body_text = page.inner_text("body")
             login_keywords = ["扫码登录", "请先登录", "登录后查看", "请使用抖音App扫码"]
@@ -71,7 +66,152 @@ def _check_login_status(page) -> bool:
         return True
     except Exception as e:
         print(f"[worker] 登录状态检测异常: {e}")
-        return True  # 异常时假设已登录，继续尝试
+        return True
+
+
+def _extract_page_comments(page, min_like_count, debug=False):
+    """提取页面评论数据，返回 (page_comments, debug_info)"""
+    page_comments = []
+    debug_info = {
+        "total_items": 0,
+        "visible_items": 0,
+        "valid_bbox_items": 0,
+        "skipped_reasons": [],
+    }
+
+    comment_items = page.query_selector_all("div[data-e2e='comment-item']")
+    debug_info["total_items"] = len(comment_items)
+
+    for idx, elem in enumerate(comment_items):
+        try:
+            if not elem.is_visible():
+                debug_info["skipped_reasons"].append(f"[{idx}] not visible")
+                continue
+            debug_info["visible_items"] += 1
+
+            bbox = elem.bounding_box()
+            if not bbox:
+                debug_info["skipped_reasons"].append(f"[{idx}] no bbox")
+                continue
+            if bbox["height"] < 40:
+                debug_info["skipped_reasons"].append(f"[{idx}] height={bbox['height']:.0f}<40")
+                continue
+            debug_info["valid_bbox_items"] += 1
+
+            full_text = elem.inner_text()
+            likes = 0
+
+            # 解析点赞数
+            wan_matches = re.findall(r"(\d+\.?\d*)\s*万", full_text)
+            if wan_matches:
+                likes = int(float(wan_matches[0]) * 10000)
+            else:
+                numbers = re.findall(r"\b(\d{2,6})\b", full_text)
+                for num_str in numbers:
+                    num = int(num_str)
+                    if num > likes and num < 1_000_000:
+                        likes = num
+
+            # 提取评论内容
+            lines = full_text.strip().split("\n")
+            content = ""
+            for line in lines:
+                line = line.strip()
+                if len(line) > 5 and not line.isdigit() and "回复" not in line and "展开" not in line:
+                    content = line
+                    break
+
+            page_comments.append(
+                {
+                    "element": elem,
+                    "content": content,
+                    "likes": likes,
+                    "bbox": bbox,
+                }
+            )
+        except Exception as e:
+            debug_info["skipped_reasons"].append(f"[{idx}] exception: {str(e)[:50]}")
+            continue
+
+    return page_comments, debug_info
+
+
+def _find_matching_comment(page_comments, comment_content, like_count, min_like_count, exclude_contents):
+    """匹配目标评论"""
+    content_prefix = comment_content[:20] if len(comment_content) > 20 else comment_content
+
+    # 优先内容匹配
+    if content_prefix:
+        for pc in page_comments:
+            if content_prefix in pc["content"]:
+                pc_prefix = pc["content"][:30]
+                if pc_prefix not in exclude_contents:
+                    print(f"[worker] 内容匹配: {pc['content'][:30]}")
+                    return pc
+
+    # 点赞数匹配（±10%）
+    if like_count >= min_like_count:
+        for pc in page_comments:
+            if abs(pc["likes"] - like_count) <= like_count * 0.1:
+                pc_prefix = pc["content"][:30]
+                if pc_prefix not in exclude_contents:
+                    print(f"[worker] 点赞数匹配: {pc['likes']} vs {like_count}")
+                    return pc
+
+    # 兜底：取最高赞且未截过的
+    valid = [pc for pc in page_comments if pc["likes"] >= min_like_count]
+    valid.sort(key=lambda x: x["likes"], reverse=True)
+    for pc in valid:
+        pc_prefix = pc["content"][:30]
+        if pc_prefix not in exclude_contents:
+            print(f"[worker] 最高赞兜底: {pc['likes']}")
+            return pc
+
+    return None
+
+
+def _screenshot_comment(page, matched, filepath):
+    """截图单个评论，返回 (success, error_reason)"""
+    elem = matched["element"]
+
+    try:
+        print("[worker] 正在滚动元素到可见区域...")
+        elem.scroll_into_view_if_needed(timeout=10000)
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"[worker] 滚动超时: {str(e)[:60]}")
+        return False, f"scroll_timeout: {str(e)[:50]}"
+
+    try:
+        print("[worker] 正在获取元素边界框...")
+        bbox = elem.bounding_box()
+        if not bbox:
+            print("[worker] 无法获取 bbox")
+            return False, "no_bbox"
+    except Exception as e:
+        print(f"[worker] 获取 bbox 超时: {str(e)[:60]}")
+        return False, f"bbox_timeout: {str(e)[:50]}"
+
+    padding = 10
+    clip_x = max(0, bbox["x"] - padding)
+    clip_y = max(0, bbox["y"] - padding)
+    clip_width = min(1280 - clip_x, bbox["width"] + 2 * padding)
+    clip_height = min(900 - clip_y, bbox["height"] + 2 * padding)
+
+    if clip_width <= 0 or clip_height <= 0:
+        print("[worker] clip 区域无效")
+        return False, "invalid_clip"
+
+    try:
+        print(f"[worker] 正在截图 (clip={clip_width:.0f}x{clip_height:.0f})...")
+        page.screenshot(
+            path=filepath,
+            clip={"x": clip_x, "y": clip_y, "width": clip_width, "height": clip_height},
+        )
+        return True, None
+    except Exception as e:
+        print(f"[worker] 截图超时: {str(e)[:80]}")
+        return False, f"screenshot_timeout: {str(e)[:60]}"
 
 
 def main():
@@ -95,7 +235,7 @@ def main():
 
     os.makedirs(screenshots_dir, exist_ok=True)
 
-    # 将项目根目录加入 sys.path，以便导入 engine.config
+    # 将项目根目录加入 sys.path
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
@@ -136,10 +276,11 @@ def main():
             # ── 登录状态检测（仅在第一个视频时检测）──
             login_checked = False
             is_logged_in = True
-            _dbg(f"[worker] begin loop, total_comments={len(comments)}")
 
-            # ── 截图循环 ──
-            print(f"[worker] 开始截图循环，共 {len(comments)} 条评论")
+            # ── 创建单个页面用于复用 ──
+            page = context.new_page()
+            print(f"[worker] 创建复用页面，开始截图循环，共 {len(comments)} 条评论")
+
             for i, comment in enumerate(comments, 1):
                 video_url = comment.get("video_url", "")
                 like_count = comment.get("like_count", 0)
@@ -159,27 +300,19 @@ def main():
                     results.append(result)
                     continue
 
-                    _dbg(f"[worker] ({i}/{len(comments)}) open page: {video_url}")
-
-                page = None
                 try:
                     start_time = time.time()
                     timeout_seconds = 90
 
-                    print(f"[worker] ({i}/{len(comments)}) 创建新页面...")
-                    page = context.new_page()
-
+                    # 导航到视频页面（先清空页面状态，避免 SPA 残留）
+                    print(f"[worker] ({i}/{len(comments)}) 导航到: {video_url[:50]}...")
                     try:
-                        print(f"[worker] ({i}/{len(comments)}) 导航到: {video_url[:50]}...")
+                        page.goto("about:blank")
+                        time.sleep(0.3)
                         page.goto(video_url, wait_until="domcontentloaded", timeout=60000)
                         print(f"[worker] ({i}/{len(comments)}) 页面加载成功")
                     except Exception as e:
                         print(f"[worker] ({i}/{len(comments)}) 页面加载失败: {str(e)[:100]}")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
                         results.append(result)
                         continue
 
@@ -193,21 +326,11 @@ def main():
                         if not is_logged_in:
                             print("[worker] 未登录抖音，无法截图评论")
                             print("[worker] 请先通过 MediaCrawler 扫码登录抖音")
-                            try:
-                                page.close()
-                            except Exception:
-                                pass
-                            page = None
                             results.append(result)
                             continue
 
                     if time.time() - start_time > timeout_seconds:
                         print(f"[worker] ({i}/{len(comments)}) 超时 (goto)")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
                         results.append(result)
                         continue
 
@@ -219,11 +342,6 @@ def main():
 
                     if time.time() - start_time > timeout_seconds:
                         print(f"[worker] ({i}/{len(comments)}) 超时 (scroll)")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
                         results.append(result)
                         continue
 
@@ -248,157 +366,60 @@ def main():
 
                     if time.time() - start_time > timeout_seconds:
                         print(f"[worker] ({i}/{len(comments)}) 超时 (before extract)")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
                         results.append(result)
                         continue
 
                     # 提取页面评论
-                    page_comments = []
-                    comment_items = page.query_selector_all("div[data-e2e='comment-item']")
-                    for elem in comment_items:
-                        try:
-                            if not elem.is_visible():
-                                continue
-                            bbox = elem.bounding_box()
-                            if not bbox or bbox["height"] < 40:
-                                continue
-                            full_text = elem.inner_text()
-                            likes = 0
-                            wan_matches = re.findall(r"(\d+\.?\d*)\s*万", full_text)
-                            if wan_matches:
-                                likes = int(float(wan_matches[0]) * 10000)
-                            else:
-                                numbers = re.findall(r"\b(\d{2,6})\b", full_text)
-                                for num_str in numbers:
-                                    num = int(num_str)
-                                    if num > likes and num < 1_000_000:
-                                        likes = num
-                            lines = full_text.strip().split("\n")
-                            content = ""
-                            for line in lines:
-                                line = line.strip()
-                                if len(line) > 5 and not line.isdigit() and "回复" not in line and "展开" not in line:
-                                    content = line
-                                    break
-                            page_comments.append(
-                                {
-                                    "element": elem,
-                                    "content": content,
-                                    "likes": likes,
-                                    "bbox": bbox,
-                                }
-                            )
-                        except Exception:
-                            continue
-
-                    _dbg(f"[worker] 提取到 {len(page_comments)} 条评论")
+                    page_comments, debug_info = _extract_page_comments(page, min_like_count, debug=True)
+                    print(
+                        f"[worker] 提取到 {len(page_comments)} 条评论 (items={debug_info['total_items']}, visible={debug_info['visible_items']}, valid_bbox={debug_info['valid_bbox_items']})"
+                    )
+                    if len(page_comments) == 0 and debug_info["skipped_reasons"]:
+                        print(f"[worker] 跳过原因: {debug_info['skipped_reasons'][:5]}")
 
                     if time.time() - start_time > timeout_seconds:
                         print(f"[worker] ({i}/{len(comments)}) 超时 (before match)")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
                         results.append(result)
                         continue
 
                     # 匹配目标评论
-                    content_prefix = comment_content[:20] if len(comment_content) > 20 else comment_content
                     exclude_contents = video_captured_contents.get(video_url, set())
-
-                    matched = None
-
-                    # 优先内容匹配
-                    if content_prefix:
-                        for pc in page_comments:
-                            if content_prefix in pc["content"]:
-                                pc_prefix = pc["content"][:30]
-                                if pc_prefix not in exclude_contents:
-                                    matched = pc
-                                    print(f"[worker] 内容匹配: {pc['content'][:30]}")
-                                    break
-
-                    # 点赞数匹配（±10%）
-                    if not matched and like_count >= min_like_count:
-                        for pc in page_comments:
-                            if abs(pc["likes"] - like_count) <= like_count * 0.1:
-                                pc_prefix = pc["content"][:30]
-                                if pc_prefix not in exclude_contents:
-                                    matched = pc
-                                    print(f"[worker] 点赞数匹配: {pc['likes']} vs {like_count}")
-                                    break
-
-                    # 兜底：取最高赞且未截过的
-                    if not matched:
-                        valid = [pc for pc in page_comments if pc["likes"] >= min_like_count]
-                        valid.sort(key=lambda x: x["likes"], reverse=True)
-                        for pc in valid:
-                            pc_prefix = pc["content"][:30]
-                            if pc_prefix not in exclude_contents:
-                                matched = pc
-                                print(f"[worker] 最高赞兜底: {pc['likes']}")
-                                break
+                    matched = _find_matching_comment(
+                        page_comments, comment_content, like_count, min_like_count, exclude_contents
+                    )
 
                     if matched:
                         if time.time() - start_time > timeout_seconds:
                             print(f"[worker] ({i}/{len(comments)}) 超时 (before screenshot)")
-                            try:
-                                page.close()
-                            except Exception:
-                                pass
-                            page = None
                             results.append(result)
                             continue
 
-                        elem = matched["element"]
-                        elem.scroll_into_view_if_needed()
-                        time.sleep(0.5)
-                        bbox = elem.bounding_box()
-                        if bbox:
-                            padding = 10
-                            clip_x = max(0, bbox["x"] - padding)
-                            clip_y = max(0, bbox["y"] - padding)
-                            clip_width = min(1280 - clip_x, bbox["width"] + 2 * padding)
-                            clip_height = min(900 - clip_y, bbox["height"] + 2 * padding)
-                            if clip_width > 0 and clip_height > 0:
-                                page.screenshot(
-                                    path=filepath,
-                                    clip={"x": clip_x, "y": clip_y, "width": clip_width, "height": clip_height},
-                                )
-                                result["screenshot_path"] = filepath
-                                captured_prefix = matched["content"][:20]
-                                if video_url not in video_captured_contents:
-                                    video_captured_contents[video_url] = set()
-                                video_captured_contents[video_url].add(captured_prefix)
-                                print(f"[worker] ({i}/{len(comments)}) 截图已保存")
-                            else:
-                                print(f"[worker] ({i}/{len(comments)}) clip 区域无效")
+                        success, error_reason = _screenshot_comment(page, matched, filepath)
+                        if success:
+                            result["screenshot_path"] = filepath
+                            captured_prefix = matched["content"][:20]
+                            if video_url not in video_captured_contents:
+                                video_captured_contents[video_url] = set()
+                            video_captured_contents[video_url].add(captured_prefix)
+                            print(f"[worker] ({i}/{len(comments)}) 截图已保存")
                         else:
-                            print(f"[worker] ({i}/{len(comments)}) 无法获取 bbox")
+                            print(f"[worker] ({i}/{len(comments)}) 截图失败: {error_reason}")
                     else:
                         print(f"[worker] ({i}/{len(comments)}) 未找到匹配评论")
 
-                    page.close()
-                    page = None
                     time.sleep(random.uniform(1, 2))
 
                 except Exception as e:
                     print(f"[worker] ({i}/{len(comments)}) 失败: {str(e)[:80]}")
-                    if page:
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        page = None
 
                 results.append(result)
 
-            # 浏览器由外层统一关闭，这里不关闭
+            # 关闭复用页面
+            try:
+                page.close()
+            except Exception:
+                pass
+
             print(f"[worker] 截图完成，共处理 {len(results)} 条评论")
             print("[worker] 完成！")
 

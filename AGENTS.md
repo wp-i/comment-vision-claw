@@ -103,9 +103,12 @@ comment-vision-claw/
 - 独立子进程，避免与 Streamlit/asyncio 的事件循环冲突
 - **浏览器连接策略**：通过 CDP 连接主抓取阶段的浏览器（端口 9222），浏览器由外层统一清理
 - **CDP 模式**：`p.chromium.connect_over_cdp("http://localhost:9222")` → 返回 `Browser` 对象，从中取 `contexts[0]` 得到 `BrowserContext`
+- **复用单个标签页**：创建一个页面，循环内使用 `page.goto()` 导航到不同视频 URL，避免打开多个浏览器窗口
+- **页面状态清空**：每次导航前先 `page.goto("about:blank")` 清空 SPA 页面状态，避免残留状态导致截图超时
 - **登录状态检测**：打开第一个视频页面后检测是否出现登录弹窗（扫码登录、请先登录等），若未登录则**跳过所有截图**并输出提示，避免浏览器闪退
 - **结果数量保证**：确保输出结果数量与输入评论数量一致（不足时补空结果）
 - 匹配策略：内容前缀匹配 → 点赞数匹配（±10%）→ 最高赞评论
+- **去重规则**：每条视频只保留最多两条热评，按点赞数排序保留较高的
   - **截图会话策略**：截图阶段优先复用主抓取期间的 CDP 浏览器会话；不要为了截图提前关闭抓取浏览器，也不要在截图前重启整个 Chrome 进程
   - **浏览器保活开关**：当需要让截图 worker 连接仍在工作的 CDP 浏览器时，使用环境变量 `MEDIACRAWLER_PRESERVE_BROWSER=true` 禁止 MediaCrawler 的 atexit/signal 清理过早关闭浏览器；截图完成后再由外层统一清理
   - **渐进式抓取**：每轮抓取后先累计热评，热评达标后再停止，之后统一处理截图与报告
@@ -184,7 +187,7 @@ MediaCrawlerDouyinScraper.capture_hot_comments()
 | `MEDIACRAWLER_PATH` | 自动检测 | MediaCrawler 安装路径 |
 | `MIN_LIKE_COUNT` | `1000` | 热评最小点赞数 |
 | `MIN_REPLY_COUNT` | `100` | 热评最小回复数 |
-| `MAX_COMMENTS` | `10` | 每个视频评论抓取上限 / 最多保留热评数 |
+| `MAX_COMMENTS` | `20` | 每个视频评论抓取上限 / 最多保留热评数 |
 | `MAX_VIDEOS` | `10` | 最多抓取视频数 |
 | `HEADLESS` | `false` | 截图浏览器是否无头模式（`true`=不显示窗口） |
 | `OPENAI_API_KEY` | 空 | AI 分析 API Key（可选） |
@@ -239,4 +242,4 @@ MediaCrawlerDouyinScraper.capture_hot_comments()
 
  15. **视频/评论数量映射**：外层项目的 `MAX_VIDEOS`、`MAX_COMMENTS` 会在启动 MediaCrawler 子进程时同步映射到 `CRAWLER_MAX_NOTES_COUNT`、`CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES`，以保证 `.env` 配置生效一致
 
- 16. **截图浏览器空白标签页**：CDP 模式下，MediaCrawler 抓取期间会打开多个标签页（搜索页、视频页等），截图 worker 连接后会复用这些标签页，每个视频打开新标签页是正常行为
+ 16. **截图标签页复用**：CDP 模式下，截图 worker 复用单个标签页进行截图，每次导航前先 `goto("about:blank")` 清空页面状态，避免 SPA 残留导致截图超时
