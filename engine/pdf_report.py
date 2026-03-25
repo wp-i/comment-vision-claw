@@ -256,7 +256,7 @@ def generate_pdf_report(
         f.write(html)
 
     try:
-        asyncio.run(_to_pdf(html_path, pdf_path))
+        _to_pdf_sync(html_path, pdf_path)
         log_progress(f"Generated PDF: {pdf_path}")
         os.remove(html_path)
     except Exception as e:
@@ -266,22 +266,44 @@ def generate_pdf_report(
     return pdf_path
 
 
-async def _to_pdf(html: str, pdf: str):
-    from playwright.async_api import async_playwright
+def _to_pdf_sync(html: str, pdf: str):
+    """Generate PDF using sync playwright in subprocess to avoid event loop conflicts."""
+    import subprocess
+    import sys
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page()
-        await page.goto(f"file:///{os.path.abspath(html)}")
-        await page.pdf(
-            path=pdf,
-            format="A4",
-            margin={
-                "top": "0.5cm",
-                "right": "0.5cm",
-                "bottom": "0.5cm",
-                "left": "0.5cm",
-            },
-            print_background=True,
-        )
-        await browser.close()
+    # Create a simple script to generate PDF
+    script = f'''
+import sys
+from playwright.sync_api import sync_playwright
+import os
+
+html_path = r"{os.path.abspath(html)}"
+pdf_path = r"{os.path.abspath(pdf)}"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+    page.goto(f"file:///" + html_path)
+    page.pdf(
+        path=pdf_path,
+        format="A4",
+        margin={{
+            "top": "0.5cm",
+            "right": "0.5cm",
+            "bottom": "0.5cm",
+            "left": "0.5cm",
+        }},
+        print_background=True,
+    )
+    browser.close()
+'''
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    if result.returncode != 0:
+        raise Exception(f"PDF generation failed: {result.stderr}")

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional, List
 
 from dotenv import load_dotenv
+from engine.config import min_like_count, min_reply_count, max_videos
 
 load_dotenv()
 
@@ -39,13 +40,7 @@ except ImportError:
 
 
 # Import local modules
-from engine.config import (
-    PLATFORM,
-    MIN_LIKE_COUNT,
-    MIN_REPLY_COUNT,
-    MAX_VIDEOS,
-    MAX_COMMENTS,
-)
+from engine.config import PLATFORM, min_like_count, min_reply_count, max_videos
 from engine.utils import log_progress, setup_directories
 from engine.mediacrawler_scraper import (
     MediaCrawlerDouyinScraper,
@@ -81,17 +76,17 @@ if MCP_AVAILABLE:
                         },
                         "min_likes": {
                             "type": "integer",
-                            "default": 5000,
+                            "default": min_like_count(),
                             "description": "最小点赞数阈值",
                         },
                         "min_replies": {
                             "type": "integer",
-                            "default": 500,
+                            "default": min_reply_count(),
                             "description": "最小回复数阈值",
                         },
                         "max_videos": {
                             "type": "integer",
-                            "default": 100,
+                            "default": max_videos(),
                             "description": "最大抓取视频数",
                         },
                     },
@@ -148,9 +143,9 @@ async def handle_capture_hot_comments(args: dict) -> List[TextContent]:
     """Handle hot comments capture."""
     keyword = args.get("keyword", "")
     time_range = args.get("time_range", "1day")
-    min_likes = args.get("min_likes", 5000)
-    min_replies = args.get("min_replies", 500)
-    max_videos = args.get("max_videos", 100)
+    min_likes = args.get("min_likes", min_like_count())
+    min_replies = args.get("min_replies", min_reply_count())
+    max_videos_val = args.get("max_videos", max_videos())
 
     # Check MediaCrawler installation
     if not check_mediacrawler_installed():
@@ -165,7 +160,7 @@ async def handle_capture_hot_comments(args: dict) -> List[TextContent]:
         # Set environment variables for this run
         os.environ["MIN_LIKE_COUNT"] = str(min_likes)
         os.environ["MIN_REPLY_COUNT"] = str(min_replies)
-        os.environ["MAX_VIDEOS"] = str(max_videos)
+        os.environ["MAX_VIDEOS"] = str(max_videos_val)
 
         scraper = MediaCrawlerDouyinScraper()
         comments = scraper.capture_hot_comments(keyword, time_range)
@@ -280,14 +275,12 @@ def cli_main():
     """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Comment-Vision-Claw: 抖音热评抓取与分析工具"
-    )
+    parser = argparse.ArgumentParser(description="Comment-Vision-Claw: 抖音热评抓取与分析工具")
     parser.add_argument("keyword", nargs="?", help="搜索关键词")
     parser.add_argument("--time-range", default="1day", choices=["1day", "7days"])
-    parser.add_argument("--min-likes", type=int, default=5000)
-    parser.add_argument("--min-replies", type=int, default=500)
-    parser.add_argument("--max-videos", type=int, default=100)
+    parser.add_argument("--min-likes", type=int, default=min_like_count())
+    parser.add_argument("--min-replies", type=int, default=min_reply_count())
+    parser.add_argument("--max-videos", type=int, default=max_videos())
     parser.add_argument("--server", action="store_true", help="启动MCP服务器模式")
 
     args = parser.parse_args()
@@ -358,9 +351,7 @@ def run_cli(args):
 async def run_mcp_server():
     """Run MCP server."""
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, server.create_initialization_options()
-        )
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ Desktop.ini
 
 # Logs
 *.log
+comment_vision_claw.log
 
 # Playwright
 playwright/

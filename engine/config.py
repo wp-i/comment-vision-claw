@@ -19,14 +19,91 @@ PLATFORM = os.getenv("PLATFORM", "douyin")
 HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
 
 # Hot comment thresholds (OR condition: likes >= MIN_LIKE_COUNT OR replies >= MIN_REPLY_COUNT)
-MIN_LIKE_COUNT = int(os.getenv("MIN_LIKE_COUNT", "5000"))
-MIN_REPLY_COUNT = int(os.getenv("MIN_REPLY_COUNT", "400"))
+MIN_LIKE_COUNT = int(os.getenv("MIN_LIKE_COUNT", "1000"))
+MIN_REPLY_COUNT = int(os.getenv("MIN_REPLY_COUNT", "100"))
 MAX_VIDEOS = int(os.getenv("MAX_VIDEOS", "200"))
 MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", "10"))
 MAX_SCREENSHOTS = int(os.getenv("MAX_SCREENSHOTS", "10"))
 
+
+# Dynamic configuration accessors
+def min_like_count() -> int:
+    """Return the current minimum like count from environment (dynamic).
+
+    Reads MIN_LIKE_COUNT from env every time it is called to reflect
+    runtime changes without restarting the process.
+    """
+    try:
+        # Reload .env to reflect live changes without restarting the process
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        return int(os.getenv("MIN_LIKE_COUNT", "1000"))
+    except Exception:
+        return 1000
+
+
+def min_reply_count() -> int:
+    """Return the current minimum reply count from environment (dynamic)."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        return int(os.getenv("MIN_REPLY_COUNT", "100"))
+    except Exception:
+        return 100
+
+
+def max_videos() -> int:
+    """Return the current max videos from environment (dynamic)."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+        return int(os.getenv("MAX_VIDEOS", "200"))
+    except Exception:
+        return 200
+
+
+def max_comments() -> int:
+    """Return the current MAX_COMMENTS from environment (dynamic)."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+        return int(os.getenv("MAX_COMMENTS", "10"))
+    except Exception:
+        return 10
+
+
 # External tools
-MEDIACRAWLER_PATH = os.getenv("MEDIACRAWLER_PATH", "../MediaCrawler")
+def _detect_mediapcrawler_path():
+    """自动检测MediaCrawler安装位置"""
+    # 优先使用环境变量
+    env_path = os.getenv("MEDIACRAWLER_PATH")
+    if env_path and os.path.exists(os.path.join(env_path, "main.py")):
+        return env_path
+
+    # 常见安装位置（项目旁边优先）
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(script_dir, "MediaCrawler"),  # 项目旁边
+        "D:/MediaCrawler",
+        "C:/MediaCrawler",
+        "../MediaCrawler",
+        "./MediaCrawler",
+        os.path.expanduser("~/MediaCrawler"),
+    ]
+
+    for path in candidates:
+        if os.path.exists(os.path.join(path, "main.py")):
+            return os.path.abspath(path)
+
+    # 默认返回项目旁边
+    return os.path.join(script_dir, "MediaCrawler")
+
+
+MEDIACRAWLER_PATH = _detect_mediapcrawler_path()
 CDP_URL = os.getenv("CDP_URL", "http://127.0.0.1:9222")
 
 # AI Analysis (optional)
