@@ -244,6 +244,9 @@ def main():
     video_captured_contents = {}
     results = []
 
+    cdp_browser = None
+    use_fallback_browser = False
+
     try:
         with sync_playwright() as p:
             _dbg("[worker] playwright started")
@@ -260,18 +263,38 @@ def main():
             conn_result = sock.connect_ex(("localhost", 9222))
             sock.close()
             if conn_result != 0:
-                print(f"[worker] 错误: CDP 端口 9222 不可用 (conn_result={conn_result})")
-                print("[worker] 浏览器可能已被 MediaCrawler 清理")
-                with open(output_file, "w", encoding="utf-8") as f:
-                    json.dump([{"screenshot_path": ""} for _ in comments], f)
-                return
+                print(f"[worker] CDP 端口 9222 不可用，尝试使用独立浏览器...")
+                use_fallback_browser = True
+            else:
+                print(f"[worker] CDP 端口 9222 可用，尝试连接...")
+                try:
+                    cdp_browser = p.chromium.connect_over_cdp(cdp_url)
+                    print(f"[worker] CDP 连接成功: is_connected={cdp_browser.is_connected()}")
+                    contexts = cdp_browser.contexts
+                    context = contexts[0] if contexts else cdp_browser.new_context()
+                    print(f"[worker] 已连接 CDP 浏览器; contexts={len(cdp_browser.contexts)}")
+                except Exception as e:
+                    print(f"[worker] CDP 连接失败: {e}，使用独立浏览器...")
+                    use_fallback_browser = True
 
-            print(f"[worker] CDP 端口 9222 可用，尝试连接...")
-            cdp_browser = p.chromium.connect_over_cdp(cdp_url)
-            print(f"[worker] CDP 连接成功: is_connected={cdp_browser.is_connected()}")
-            contexts = cdp_browser.contexts
-            context = contexts[0] if contexts else cdp_browser.new_context()
-            print(f"[worker] 已连接 CDP 浏览器; contexts={len(cdp_browser.contexts)}")
+            # 如果 CDP 不可用或连接失败，使用独立的 Chromium 浏览器
+            if use_fallback_browser:
+                print(f"[worker] 启动独立浏览器进行截图...")
+                headless = os.getenv("HEADLESS", "false").lower() == "true"
+                browser = p.chromium.launch(headless=headless)
+                context = browser.new_context()
+                print(f"[worker] 独立浏览器已启动 (headless={headless})")
+
+            # 关闭初始的空白页面（chrome://new-tab-page/, about:blank），只保留工作页面
+            initial_pages = context.pages[:]
+            for p in initial_pages:
+                url = p.url if hasattr(p, "url") else ""
+                if url in ["chrome://new-tab-page/", "about:blank", ""]:
+                    try:
+                        p.close()
+                        print(f"[worker] 已关闭初始页面: {url}")
+                    except Exception:
+                        pass
 
             # ── 登录状态检测（仅在第一个视频时检测）──
             login_checked = False
@@ -279,7 +302,7 @@ def main():
 
             # ── 创建单个页面用于复用 ──
             page = context.new_page()
-            print(f"[worker] 创建复用页面，开始截图循环，共 {len(comments)} 条评论")
+            print(f"[worker] 创建复用页面，当前页面数: {len(context.pages)}，开始截图循环，共 {len(comments)} 条评论")
 
             for i, comment in enumerate(comments, 1):
                 video_url = comment.get("video_url", "")
@@ -419,6 +442,14 @@ def main():
                 page.close()
             except Exception:
                 pass
+
+            # 关闭 fallback 浏览器（如果有）
+            if use_fallback_browser:
+                try:
+                    browser.close()
+                    print("[worker] 已关闭独立浏览器")
+                except Exception:
+                    pass
 
             print(f"[worker] 截图完成，共处理 {len(results)} 条评论")
             print("[worker] 完成！")

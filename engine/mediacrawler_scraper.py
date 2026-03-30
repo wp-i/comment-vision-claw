@@ -450,22 +450,29 @@ class MediaCrawlerDouyinScraper:
 
             hot_ready = False
 
+            # Build crawler arguments based on whether keyword is provided
+            crawler_args = [
+                "--platform",
+                "dy",
+                "--type",
+                "search",
+                "--lt",
+                "qrcode",
+                "--save_data_option",
+                "json",
+            ]
+
+            # If keyword is provided, add it; otherwise search all videos (without keyword)
+            search_keyword = keyword.strip() if keyword else ""
+            if search_keyword:
+                crawler_args.extend(["--keywords", search_keyword])
+                log_progress(f"使用关键词搜索: {search_keyword}")
+            else:
+                log_progress("关键词为空，搜索全部视频")
+
             # Run MediaCrawler search
             try:
-                search_result = self._run_mediapcrawler(
-                    [
-                        "--platform",
-                        "dy",
-                        "--type",
-                        "search",
-                        "--lt",
-                        "qrcode",
-                        "--keywords",
-                        keyword,
-                        "--save_data_option",
-                        "json",
-                    ]
-                )
+                search_result = self._run_mediapcrawler(crawler_args)
                 hot_ready = self._wait_for_hot_comments(max_comments(), timeout=900, poll_interval=3)
                 if getattr(search_result, "returncode", 0) not in (0, None):
                     search_failed = True

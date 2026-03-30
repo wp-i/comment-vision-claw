@@ -278,6 +278,18 @@ cd D:\MediaCrawler && pip install -r requirements.txt
 </details>
 
 <details>
+<summary><b>Q: 关键词留空会怎样？</b></summary>
+
+关键词留空时，系统会搜索全部视频（不限定关键词），适用于热点趋势分析等场景。
+</details>
+
+<details>
+<summary><b>Q: MCP 模式截图失败怎么办？</b></summary>
+
+系统已内置截图 fallback 机制：当 CDP 连接失败时，会自动启动独立浏览器进行截图，确保 MCP 模式下截图功能正常工作。
+</details>
+
+<details>
 <summary><b>Q: 抖音显示未登录 / 需要扫码</b></summary>
 
 首次使用必须扫码登录一次，登录状态会保存在 MediaCrawler 的 `browser_data` 目录中，后续无需重复登录。
